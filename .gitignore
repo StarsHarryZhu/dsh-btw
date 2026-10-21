@@ -1,0 +1,18 @@
+# The client transpile scratch directory; `node build.js` recreates it.
+.client-build/
+
+# `lib/` is the published artifact and what a profile's `link:` install
+# resolves, so it is committed. It is generated: edit `src/` and run
+# `node build.js`, never edit `lib/` by hand.
+!lib/
+
+node_modules/
+coverage/
+*.tsbuildinfo
+*.log
+*.tgz
+
+# Local assistant memory; never part of the package.
+.claude/
+
+.DS_Store

@@ -1,0 +1,6 @@
+# dsh-btw bundle layer: register the plugin as one bundle row.
+# This file is the `dsh.bundle.patch` layer (see package.json#dsh.bundle.patch).
+# `id` is also the settings namespace the plugin's configuration page edits.
+- insert:
+    - id: dsh-btw
+      name: dsh-btw

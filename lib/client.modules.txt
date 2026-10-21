@@ -1,0 +1,13 @@
+/** Bundled client modules (11):
+ *   client/card.js
+ *   client/host.js
+ *   client/index.js
+ *   client/locales.js
+ *   client/prefs.js
+ *   client/records.js
+ *   client/selection.js
+ *   client/settings.js
+ *   client/styles.css
+ *   client/views.js
+ *   shared/protocol.js
+ */
