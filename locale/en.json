@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-btw",
-    "description": "Ask a side question with /btw: a cheap model with web search as its only tool answers from the current conversation in a collapsible card, without interrupting the main task."
+    "description": "Ask a side question with /btw: by default the session's own model, with web search as its only tool, answers from the current conversation in a collapsible card, without interrupting the main task."
   }
 }

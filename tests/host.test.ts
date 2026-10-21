@@ -31,7 +31,7 @@ function volatile<T>(value: T) {
 
 function config(overrides: Partial<Record<keyof LoadedConfig, unknown>> = {}): LoadedConfig {
   return {
-    modelSource: volatile(overrides.modelSource ?? 'custom'),
+    modelSource: volatile(overrides.modelSource ?? 'session'),
     provider: volatile(overrides.provider ?? 'deepseek-account'),
     model: volatile(overrides.model ?? 'deepseek-flash'),
     reasoningEffort: volatile(overrides.reasoningEffort ?? 'low'),
@@ -39,7 +39,8 @@ function config(overrides: Partial<Record<keyof LoadedConfig, unknown>> = {}): L
   } as LoadedConfig
 }
 
-function setup(cfg = config()) {
+/** `header` is the session's latest request route; `null` means the session has made no request yet. */
+function setup(cfg = config(), header: { provider?: string; model?: string; reasoningEffort?: string } | null = { provider: 'deepseek-account', model: 'deepseek-v4-pro', reasoningEffort: 'high' }) {
   const llm = gatedLlm()
   const definitions = new Map<string, CommandDefinitionLike>()
   const answers: Answer[] = []
@@ -68,7 +69,7 @@ function setup(cfg = config()) {
     options: {},
     session: {
       deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '修复登录' }] }],
-      requestHeader: () => ({ config: { provider: 'deepseek-account', model: 'deepseek-v4-pro', reasoningEffort: 'high' } }),
+      requestHeader: () => (header === null ? undefined : { config: header }),
     },
   }
   const ctx = {
@@ -102,17 +103,31 @@ describe('apply', () => {
     expect(answers).toHaveLength(0)
     llm.release()
     await vi.waitFor(() => expect(answers).toHaveLength(1))
-    expect(answers[0]).toMatchObject({ for: 'cmd-test-1', title: '标题', answer: '回答', model: 'deepseek-account/deepseek-flash' })
-    expect(llm.calls[0]?.model).toBe('deepseek-flash')
-    expect(llm.calls[0]?.reasoningEffort).toBe('low')
+    expect(answers[0]).toMatchObject({ for: 'cmd-test-1', title: '标题', answer: '回答', model: 'deepseek-account/deepseek-v4-pro' })
   })
 
-  it('follows the session route in session mode', async () => {
-    const { run, agent, llm, answers } = setup(config({ modelSource: 'session' }))
+  it('follows the session route by default', async () => {
+    const { run, agent, llm, answers } = setup()
     await run('btw', ' q', agent)
     llm.release()
     await vi.waitFor(() => expect(answers).toHaveLength(1))
-    expect(llm.calls[0]).toMatchObject({ model: 'deepseek-v4-pro', reasoningEffort: 'high' })
+    expect(llm.calls[0]).toMatchObject({ provider: 'deepseek-account', model: 'deepseek-v4-pro', reasoningEffort: 'high' })
+  })
+
+  it('falls back to deepseek-flash at low effort before the session has a route', async () => {
+    const { run, agent, llm, answers } = setup(config(), null)
+    await run('btw', ' q', agent)
+    llm.release()
+    await vi.waitFor(() => expect(answers).toHaveLength(1))
+    expect(llm.calls[0]).toMatchObject({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low' })
+  })
+
+  it('uses the configured route in custom mode', async () => {
+    const { run, agent, llm, answers } = setup(config({ modelSource: 'custom' }))
+    await run('btw', ' q', agent)
+    llm.release()
+    await vi.waitFor(() => expect(answers).toHaveLength(1))
+    expect(llm.calls[0]).toMatchObject({ model: 'deepseek-flash', reasoningEffort: 'low' })
   })
 
   it('answers a quote request with the quote in the prompt', async () => {
@@ -152,9 +167,12 @@ describe('apply', () => {
 })
 
 describe('Config', () => {
-  it('defaults to deepseek-flash at low effort in custom mode', () => {
+  it('defaults to the session model, with deepseek-flash at low effort as the custom route', () => {
     const value = Config({}) as Record<string, unknown>
     expect(Object.keys(value).sort()).toEqual(['maxSteps', 'model', 'modelSource', 'provider', 'reasoningEffort'])
+    const defaults = Object.fromEntries(Object.entries((Config as unknown as { dict: Record<string, { meta: { default: unknown } }> }).dict)
+      .map(([key, field]) => [key, field.meta.default]))
+    expect(defaults).toEqual({ modelSource: 'session', provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low', maxSteps: 4 })
   })
 })
 

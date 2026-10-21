@@ -21,7 +21,7 @@ interface Values {
   maxSteps: number
 }
 
-const DEFAULTS: Values = { modelSource: 'custom', provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low', maxSteps: 4 }
+const DEFAULTS: Values = { modelSource: 'session', provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low', maxSteps: 4 }
 
 /**
  * Read form values with defaults.
@@ -123,7 +123,7 @@ function SettingsPage(props: {
     <div className="dsh-btw-settings">
       <fieldset disabled={disabled}>
         <legend>{t('settings.source')}</legend>
-        {(['custom', 'session'] as const).map(source => (
+        {(['session', 'custom'] as const).map(source => (
           <label key={source} className="dsh-btw-radio">
             <input type="radio" name="dsh-btw-source" checked={draft.modelSource === source} onChange={() => update({ modelSource: source })} />
             {t(`settings.source.${source}`)}

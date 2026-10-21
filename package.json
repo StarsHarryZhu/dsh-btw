@@ -1,7 +1,7 @@
 {
   "name": "dsh-btw",
   "version": "0.1.0",
-  "description": "Side questions for DeepSeek Harness: /btw answers from the current conversation in a collapsible card, on a cheap model with web search as its only tool, without interrupting the main task.",
+  "description": "Side questions for DeepSeek Harness: /btw answers from the current conversation in a collapsible card, by default on the session's own model, with web search as its only tool, without interrupting the main task.",
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",

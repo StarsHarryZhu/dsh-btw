@@ -17,12 +17,12 @@ The vitest specs. Host specs drive the engine and the command wiring with fake L
 - `runner.test.ts` — the model loop: direct answers, denial, search, step cap, fallbacks, route choice.
 - `host.test.ts` — command registration, immediate return, deferred `/btw-answer`, deletion, config defaults.
 - `records.test.ts` — folding command nodes into records, anchoring, staleness.
-- `client.test.tsx` — cards, collapse, deletion, quoted cards in turn tails, history tab, settings summary.
+- `client.test.tsx` — cards, collapse, deletion, quoted cards in turn tails, history tab, settings, and the selection bar.
 - `manifest.test.ts` — package name, version, engine range, Plugins-page title, bundle row, and bundle banner.
 - `agents-md.test.ts` — every folder carries a four-section English AGENTS.md whose Contents list is true.
 
 ## 4. Progress
 
 - Done: all specs pass.
-- Open: no browser-level test of the selection bar; it is verified by hand in the real app.
-- Goal later: a jsdom spec for selection capture with synthetic ranges.
+- Open: selection positioning depends on real layout and is verified by hand in the real app.
+- Goal later: nothing planned.

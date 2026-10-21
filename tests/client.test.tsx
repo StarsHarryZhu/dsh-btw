@@ -14,7 +14,6 @@ import * as ReactDom from 'react-dom'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { encodeAnswer, encodeQuote } from '../src/shared/protocol.ts'
-import { appendQuote } from '../src/client/selection.tsx'
 import { readValues } from '../src/client/settings.tsx'
 
 type Component = (props: Record<string, unknown>) => React.ReactNode
@@ -219,16 +218,43 @@ describe('settings page', () => {
     expect(document.body.textContent).toContain('deepseek-flash · low')
   })
 
-  it('reads stored values with defaults', () => {
-    expect(readValues({ modelSource: 'session', maxSteps: 99 })).toEqual({
+  it('reads stored values with defaults, following the session by default', () => {
+    expect(readValues({ maxSteps: 99 })).toEqual({
       modelSource: 'session', provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low', maxSteps: 4,
     })
   })
 })
 
-describe('appendQuote', () => {
-  it('appends a block quote to the draft', () => {
-    expect(appendQuote('', 'a\nb')).toBe('> a\n> b\n\n')
-    expect(appendQuote('hello  ', 'x')).toBe('hello\n\n> x\n\n')
+describe('selection bar', () => {
+  // jsdom has no layout; a zero rectangle is enough to place the bar.
+  if (typeof Range.prototype.getBoundingClientRect !== 'function') {
+    Range.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) })
+  }
+  const { find, executed } = loadClient()
+  const Dock = find('conversation.input.dock')
+
+  it('offers only Ask, and sends the quote anchored to its closed turn', async () => {
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-kind', 'assistant')
+    row.setAttribute('data-chat-turn', '2')
+    row.textContent = '依赖数量：共 5 个'
+    document.body.appendChild(row)
+    render(<Dock sessionId="s1" useChat={chatOf([], [2])} />)
+    const range = document.createRange()
+    range.selectNodeContents(row)
+    document.getSelection()?.removeAllRanges()
+    document.getSelection()?.addRange(range)
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      await new Promise(resolve => setTimeout(resolve, 10))
+    })
+    const bar = document.querySelector('.dsh-btw-bar')
+    expect([...bar!.querySelectorAll('button')].map(button => button.textContent)).toEqual(['旁问'])
+    fireEvent.click(screen.getByRole('button', { name: '旁问' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '哪个是运行时依赖？' } })
+    await act(async () => { fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' }) })
+    const line = executed.find(item => item.startsWith('/btw-quote '))
+    expect(JSON.parse(line!.slice('/btw-quote '.length))).toEqual({ question: '哪个是运行时依赖？', quote: '依赖数量：共 5 个', anchorTurn: 2 })
+    row.remove()
   })
 })

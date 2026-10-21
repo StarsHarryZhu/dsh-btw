@@ -1,11 +1,11 @@
 /**
  * Ask about selected text.
  *
- * Selecting text inside one message row opens a small bar: "Ask" opens a
- * question box and sends `/btw-quote` with the quote and the row's turn, so the
- * answer card is drawn under that reply; "Add to conversation" appends the quote
- * to the composer draft. Only rows the host marks as chat messages qualify;
- * inputs, buttons, and folded process rows keep the browser's behavior.
+ * Selecting text inside one message row opens a small bar with one action,
+ * "Ask": it opens a question box and sends `/btw-quote` with the quote and the
+ * row's turn, so the answer card is drawn under that reply. Only rows the host
+ * marks as chat messages qualify; inputs, buttons, and folded process rows keep
+ * the browser's behavior.
  * @module dsh-btw/client/selection
  */
 
@@ -54,17 +54,6 @@ export function captureSelection(root: ParentNode): Captured | undefined {
 }
 
 /**
- * Append a quote to a draft as a Markdown block quote.
- * @param draft - the composer's current text.
- * @param quote - the selected text.
- * @returns the new draft, the quote followed by an empty line for the cursor.
- */
-export function appendQuote(draft: string, quote: string): string {
-  const quoted = quote.replace(/\r\n?/gu, '\n').split('\n').map(line => `> ${line}`).join('\n')
-  return draft.trim() ? `${draft.replace(/\s+$/u, '')}\n\n${quoted}\n\n` : `${quoted}\n\n`
-}
-
-/**
  * Build the per-session selection component.
  * @param getRemote - the live `ctx.remote`.
  * @returns the `conversation.input.dock` entry.
@@ -79,7 +68,6 @@ export function createSelectionDock(getRemote: () => RemoteLike | undefined) {
     const [question, setQuestion] = useState('')
     const [error, setError] = useState<string>()
     const [busy, setBusy] = useState(false)
-    const draft = props.useInput?.(state => state?.draft ?? '') ?? ''
     const timeline = props.useChat?.(snapshot => snapshot.timeline)
     const askingRef = useRef(false)
     askingRef.current = asking
@@ -147,13 +135,6 @@ export function createSelectionDock(getRemote: () => RemoteLike | undefined) {
       }
     }
 
-    const addToConversation = () => {
-      if (captured === undefined || props.inputActions?.setDraft === undefined) return
-      props.inputActions.setDraft(appendQuote(draft, captured.text))
-      props.inputActions.focus?.()
-      close()
-    }
-
     const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -165,8 +146,8 @@ export function createSelectionDock(getRemote: () => RemoteLike | undefined) {
     }
 
     const keep = (event: { preventDefault(): void }) => event.preventDefault()
-    // Keep the centered panel 16px inside the viewport: half its width (bar ~90px, box up to 360px) plus the margin.
-    const half = (asking ? Math.min(360, window.innerWidth - 32) / 2 : 90) + 16
+    // Keep the centered panel 16px inside the viewport: half its width (bar ~80px, box up to 360px) plus the margin.
+    const half = (asking ? Math.min(360, window.innerWidth - 32) / 2 : 40) + 16
     const left = captured === undefined ? 0 : Math.min(Math.max(captured.x, half), window.innerWidth - half)
     const panel = captured === undefined ? null : (
       <div
@@ -206,9 +187,6 @@ export function createSelectionDock(getRemote: () => RemoteLike | undefined) {
           : (
             <div className="dsh-btw-bar" role="toolbar">
               <button type="button" className="dsh-btw-button" onMouseDown={keep} onClick={() => setAsking(true)}>{t('selection.ask')}</button>
-              {props.inputActions?.setDraft !== undefined && (
-                <button type="button" className="dsh-btw-button" onMouseDown={keep} onClick={addToConversation}>{t('selection.add')}</button>
-              )}
             </div>
           )}
       </div>

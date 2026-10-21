@@ -29,19 +29,11 @@ export interface ChatSnapshotLike {
 /** Selector hook over the Chat snapshot (`useChat`). */
 export type UseChat = <S>(selector: (snapshot: ChatSnapshotLike) => S, equal?: (a: S, b: S) => boolean) => S
 
-/** The session input state fields this plugin reads. */
-export interface InputStateLike {
-  readonly draft?: string
-  readonly phase?: string
-}
-
 /** Standard props every session-scope slot component receives. */
 export interface SessionKit {
   sessionId?: string
   t?: Translate
   useChat?: UseChat
-  useInput?: <S>(selector: (state: InputStateLike | undefined) => S) => S
-  inputActions?: { setDraft?(text: string): void; focus?(): void }
 }
 
 /** Props of a `conversation.chat.commandview` entry. */
