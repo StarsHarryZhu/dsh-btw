@@ -81,15 +81,28 @@
 .dsh-btw-empty, .dsh-btw-hint { margin: 0; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 .dsh-btw-hint { padding: 4px 6px 0; font-size: 12px; }
 
-.dsh-btw-selection {
-  position: fixed; z-index: 1000; transform: translateX(-50%);
-  background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary);
-  border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16); font-size: 13px;
+/* The host places the selection surface; these match its floating Quote button. */
+.dsh-btw-pick {
+  display: inline-flex; align-items: center; padding: 2px; border-radius: 999px; corner-shape: round;
+  background: var(--dsw-alias-button-floating-fill);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+  box-shadow: var(--dsw-elevation-panel);
 }
-.dsh-btw-selection[data-mode="bar"] { transform: translate(-50%, -100%); }
-.dsh-btw-bar { display: flex; gap: 2px; padding: 3px; }
-.dsh-btw-ask { width: min(360px, calc(100vw - 32px)); padding: 10px; box-sizing: border-box; }
+.dsh-btw-pick > button {
+  padding: 3px 10px; border: none; border-radius: 999px; corner-shape: round; background: transparent;
+  color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-13); white-space: nowrap; cursor: pointer;
+}
+.dsh-btw-pick > button:focus-visible { background: var(--dsw-alias-button-floating-hover); outline: none; }
+@media (hover: hover) {
+  .dsh-btw-pick > button:hover { background: var(--dsw-alias-button-floating-hover); }
+}
+.dsh-btw-pick-divider { flex: none; width: 1px; height: 14px; background: var(--dsw-alias-border-l3); }
+.dsh-btw-ask {
+  width: 360px; max-width: calc(100vw - 32px); padding: 10px; box-sizing: border-box;
+  background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary);
+  border-radius: 12px; --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+  box-shadow: var(--dsw-elevation-panel, 0 6px 24px rgba(0, 0, 0, 0.16)); font-size: 13px;
+}
 .dsh-btw-ask textarea {
   width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 6px 8px;
   border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base, transparent);

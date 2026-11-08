@@ -7,9 +7,9 @@ const read = (path: string) => readFileSync(join(ROOT, path), 'utf8')
 const manifest = JSON.parse(read('package.json')) as Record<string, any>
 
 describe('package identity', () => {
-  it('is dsh-btw 0.1.0 and needs DeepSeek Harness 0.2.1-rc.1 or later', () => {
+  it('is dsh-btw 0.1.1 and needs DeepSeek Harness 0.2.1-rc.1 or later', () => {
     expect(manifest.name).toBe('dsh-btw')
-    expect(manifest.version).toBe('0.1.0')
+    expect(manifest.version).toBe('0.1.1')
     expect(manifest.engines.dsh).toBe('>=0.2.1-rc.1')
   })
 

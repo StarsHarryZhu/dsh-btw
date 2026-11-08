@@ -15,7 +15,7 @@ The plugin source. `index.ts` is the host entry that cordis loads in the harness
 
 - `index.ts` — host entry: `Config`, `apply`, the four commands, deferred answer publishing, and hiding internal commands from the slash menu.
 - `host` — side-question engine: history flattening, prompt, search, model loop, jobs.
-- `client` — browser half: cards, turn tail, selection bar, sidebar history, settings page.
+- `client` — browser half: cards, turn tail, "Ask" in the host selection surface, sidebar history, settings page.
 - `shared` — command names, limits, and the answer and quote encodings.
 
 ## 4. Progress

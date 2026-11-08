@@ -208,6 +208,7 @@ async function selfCheck(source) {
   }
   const dictionaries = []
   const tabTypes = []
+  const interactions = []
   const services = {
     slots,
     locale: {
@@ -219,6 +220,7 @@ async function selfCheck(source) {
     'remote.session': {},
     sidebarRightTabs: { register: (definition) => { tabTypes.push(definition.id); return () => tabTypes.splice(tabTypes.indexOf(definition.id), 1) } },
     configForms: { get: () => ({ getSnapshot: () => ({ status: 'loading' }), subscribe: () => () => undefined, mutate: async () => true }) },
+    uiConversation: { interactions: { register: (definition) => { interactions.push(definition.id); return () => interactions.splice(interactions.indexOf(definition.id), 1) } } },
   }
   const ctx = {
     get: name => services[name],
@@ -231,16 +233,18 @@ async function selfCheck(source) {
   if (JSON.stringify(keyed('conversation.chat.commandview')) !== JSON.stringify(['btw', 'btw-answer', 'btw-delete', 'btw-quote'])) {
     fail('apply(ctx) did not register the four btw command rows')
   }
-  for (const name of ['conversation.chat.turnTail', 'conversation.input.dock']) {
-    if (!registered.some(entry => entry.name === name && entry.id === PACKAGE_NAME)) fail(`apply(ctx) did not register ${name}`)
-  }
+  if (!registered.some(entry => entry.name === 'conversation.chat.turnTail' && entry.id === PACKAGE_NAME)) fail('apply(ctx) did not register the turn tail')
+  const surfaces = registered.filter(entry => entry.name === 'conversation.chat.text-interaction')
+  if (JSON.stringify(surfaces.map(entry => entry.key).sort()) !== JSON.stringify([PACKAGE_NAME, 'quote'])) fail('apply(ctx) did not register both selection surfaces')
+  if (!(surfaces.find(entry => entry.key === 'quote')?.priority < 0)) fail('the quote surface must shadow the host entry with a negative priority')
+  if (JSON.stringify(interactions) !== JSON.stringify([PACKAGE_NAME])) fail('apply(ctx) did not register its text interaction')
   if (!keyed('sidebar.right.pane.tab').includes('dsh-btw/history') || !tabTypes.includes('dsh-btw/history')) fail('apply(ctx) did not register the history tab')
   if (!keyed('plugins.bundle.config').includes(PACKAGE_NAME)) fail('apply(ctx) did not register the settings page')
   if (!dictionaries.includes(PACKAGE_NAME)) fail('apply(ctx) did not register the dictionaries')
   if (appended.length !== 1 || appended[0].attributes['data-plugin'] !== PACKAGE_NAME) fail('apply(ctx) did not mount exactly one tagged stylesheet')
-  if (registered.length !== 8) fail(`apply(ctx) registered ${registered.length} slot entries; expected exactly 8`)
+  if (registered.length !== 9) fail(`apply(ctx) registered ${registered.length} slot entries; expected exactly 9`)
   for (const dispose of disposers.reverse()) dispose()
-  if (registered.length !== 0 || dictionaries.length !== 0 || tabTypes.length !== 0 || appended[0].parent !== false) {
+  if (registered.length !== 0 || dictionaries.length !== 0 || tabTypes.length !== 0 || interactions.length !== 0 || appended[0].parent !== false) {
     fail('disposing the plugin left a registration or the stylesheet behind')
   }
 }

@@ -46,6 +46,37 @@ export interface TurnTailProps extends SessionKit {
   turn?: { readonly turn?: number; readonly status?: string }
 }
 
+/** The fields of the Session snapshot the selection surface reads. */
+export interface SessionSnapshotLike {
+  readonly removed?: boolean
+  readonly subagent?: { readonly address?: { readonly mode?: string }; readonly parentAvailable?: boolean } | null
+}
+
+/** Props of a `conversation.chat.text-interaction` entry (`TextInteractionSurface` plus session props). */
+export interface SelectionProps extends SessionKit {
+  trigger?: 'selection' | 'contextmenu'
+  dismiss?: () => void
+  /** The selected visible text, or null once the selection no longer stands. */
+  readText?: () => string | null
+  clearSelection?: () => void
+  useSession?: <S>(selector: (snapshot: SessionSnapshotLike) => S) => S
+  inputActions?: { insertQuote(text: string): boolean }
+}
+
+/** A gesture offered to a registered text interaction (`TextInteractionRequest`). */
+export interface InteractionRequestLike {
+  readonly trigger: 'selection' | 'contextmenu'
+  readonly readText: () => string | null
+  readonly open: () => void
+}
+
+/** The conversation service, reduced to its text-interaction registry. */
+export interface UiConversationLike {
+  interactions?: {
+    register(definition: { id: string; onInteraction(request: InteractionRequestLike): void }): () => void
+  }
+}
+
 /** Props of a `plugins.bundle.config` entry. */
 export interface ConfigViewProps {
   view?: 'summary' | 'page'

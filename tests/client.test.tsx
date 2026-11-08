@@ -32,6 +32,7 @@ function loadClient(execute?: (session: string, line: string) => Promise<unknown
   })
   const registrations: Array<Record<string, unknown>> = []
   const executed: string[] = []
+  const interactions: Array<{ id: string; onInteraction: (request: Record<string, unknown>) => void }> = []
   const services: Record<string, unknown> = {
     slots: {
       inject: (_name: string, callback: () => unknown) => { callback() },
@@ -45,6 +46,7 @@ function loadClient(execute?: (session: string, line: string) => Promise<unknown
     'remote.commands': {},
     'remote.session': {},
     sidebarRightTabs: { register: () => () => undefined },
+    uiConversation: { interactions: { register: (definition: (typeof interactions)[number]) => { interactions.push(definition); return () => undefined } } },
     configForms: {
       get: () => {
         // A real form keeps its snapshot reference stable until the next change.
@@ -61,7 +63,7 @@ function loadClient(execute?: (session: string, line: string) => Promise<unknown
   }
   ;(exports.apply as (ctx: unknown) => void)(ctx)
   const find = (name: string, key?: string) => registrations.find(entry => entry.name === name && (key === undefined || entry.key === key))?.component as Component
-  return { find, executed }
+  return { find, executed, registrations, interactions }
 }
 
 const command = (seq: number, name: string, args: string | null, outcome: Record<string, unknown> | null = { kind: 'success' }) => ({
@@ -225,36 +227,85 @@ describe('settings page', () => {
   })
 })
 
-describe('selection bar', () => {
-  // jsdom has no layout; a zero rectangle is enough to place the bar.
-  if (typeof Range.prototype.getBoundingClientRect !== 'function') {
-    Range.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) })
-  }
-  const { find, executed } = loadClient()
-  const Dock = find('conversation.input.dock')
+describe('selection surface', () => {
+  const { find, executed, registrations, interactions } = loadClient()
+  const surface = 'conversation.chat.text-interaction'
+  const Actions = find(surface, 'quote')
+  const writable = { removed: false, subagent: null }
+  const useSessionOf = (snapshot: Record<string, unknown>) => <S,>(selector: (value: Record<string, unknown>) => S) => selector(snapshot)
 
-  it('offers only Ask, and sends the quote anchored to its closed turn', async () => {
+  /** A reply row of turn 2 with its text selected, as the host leaves it when it opens the surface. */
+  function selectReply(text = '依赖数量：共 5 个') {
     const row = document.createElement('div')
-    row.setAttribute('data-chat-flow-kind', 'assistant')
     row.setAttribute('data-chat-turn', '2')
-    row.textContent = '依赖数量：共 5 个'
+    row.textContent = text
     document.body.appendChild(row)
-    render(<Dock sessionId="s1" useChat={chatOf([], [2])} />)
     const range = document.createRange()
     range.selectNodeContents(row)
     document.getSelection()?.removeAllRanges()
     document.getSelection()?.addRange(range)
-    await act(async () => {
-      row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
-      await new Promise(resolve => setTimeout(resolve, 10))
-    })
-    const bar = document.querySelector('.dsh-btw-bar')
-    expect([...bar!.querySelectorAll('button')].map(button => button.textContent)).toEqual(['旁问'])
+    return row
+  }
+
+  function surfaceProps(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: 's1', trigger: 'selection', useChat: chatOf([], [2]), useSession: useSessionOf(writable),
+      readText: () => '依赖数量：共 5 个', dismiss: vi.fn(), clearSelection: vi.fn(),
+      inputActions: { insertQuote: vi.fn(() => true) }, ...overrides,
+    }
+  }
+
+  const labels = () => [...document.querySelectorAll('.dsh-btw-pick > button')].map(button => button.textContent)
+
+  it('shadows the host Quote surface and registers its own interaction', () => {
+    const quote = registrations.find(entry => entry.name === surface && entry.key === 'quote')
+    expect(quote?.priority).toBeLessThan(0)
+    expect(find(surface, 'dsh-btw')).toBe(Actions)
+    expect(interactions.map(entry => entry.id)).toEqual(['dsh-btw'])
+  })
+
+  it('opens its own interaction only for a text selection', () => {
+    const open = vi.fn()
+    interactions[0]!.onInteraction({ trigger: 'selection', readText: () => 'x', open })
+    interactions[0]!.onInteraction({ trigger: 'selection', readText: () => null, open })
+    interactions[0]!.onInteraction({ trigger: 'contextmenu', readText: () => 'x', open })
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('puts Quote text and Ask in one pill; Quote text inserts the quote like the host button', () => {
+    const props = surfaceProps()
+    render(<Actions {...props} />)
+    expect(labels()).toEqual(['引用文本', '旁问'])
+    fireEvent.click(screen.getByRole('button', { name: '引用文本' }))
+    expect(props.inputActions.insertQuote).toHaveBeenCalledWith('依赖数量：共 5 个')
+    expect(props.clearSelection).toHaveBeenCalled()
+    expect(props.dismiss).toHaveBeenCalled()
+  })
+
+  it('offers only Ask where quoting is not allowed', () => {
+    const subagent = { address: { mode: 'readonly' }, parentAvailable: false }
+    render(<Actions {...surfaceProps({ useSession: useSessionOf({ removed: false, subagent }) })} />)
+    expect(labels()).toEqual(['旁问'])
+  })
+
+  it('turns into a question box and sends the quote anchored to its closed turn', async () => {
+    const row = selectReply()
+    const props = surfaceProps()
+    render(<Actions {...props} />)
     fireEvent.click(screen.getByRole('button', { name: '旁问' }))
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '哪个是运行时依赖？' } })
     await act(async () => { fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' }) })
     const line = executed.find(item => item.startsWith('/btw-quote '))
     expect(JSON.parse(line!.slice('/btw-quote '.length))).toEqual({ question: '哪个是运行时依赖？', quote: '依赖数量：共 5 个', anchorTurn: 2 })
+    expect(props.clearSelection).toHaveBeenCalled()
+    expect(props.dismiss).toHaveBeenCalled()
     row.remove()
+  })
+
+  it('closes when the session is removed', () => {
+    const props = surfaceProps({ useSession: useSessionOf({ removed: true, subagent: null }) })
+    render(<Actions {...props} />)
+    expect(document.querySelector('.dsh-btw-pick')).toBeNull()
+    expect(props.dismiss).toHaveBeenCalled()
   })
 })

@@ -1,18 +1,21 @@
 /**
  * dsh-btw browser half.
  *
- * Contributes, all under this plugin's names: the command rows of the four btw
- * commands, one turn-tail entry for cards that quote a reply, one composer-dock
- * entry for asking about selected text, a right-sidebar history tab, a settings
- * page, the copy, and one stylesheet. Each is an effect of this plugin's
- * context and is skipped (logged) if its host seat is missing.
+ * Contributes: the command rows of the four btw commands, one turn-tail entry
+ * for cards that quote a reply, the selection surface (shadowing the host
+ * Quote surface so "Quote text" and "Ask" share one pill, plus this plugin's
+ * own text interaction for when Quote is absent), a right-sidebar history tab,
+ * a settings page, the copy, and one stylesheet. Each is an effect of this
+ * plugin's context and is skipped (logged) if its host seat is missing.
  * @module dsh-btw/client
  */
 
 import { CMD_ANSWER, CMD_ASK, CMD_DELETE, CMD_QUOTE, LOCALE_NS, PLUGIN_ID } from '../shared/protocol.ts'
-import type { ClientContextLike, ConfigFormsLike, LocaleLike, RemoteLike, SidebarTabsLike, SlotsLike, Translate } from './host.ts'
+import type {
+  ClientContextLike, ConfigFormsLike, LocaleLike, RemoteLike, SidebarTabsLike, SlotsLike, Translate, UiConversationLike,
+} from './host.ts'
 import { en, fallbackT, zh } from './locales.ts'
-import { createSelectionDock } from './selection.tsx'
+import { QUOTE_SURFACE, QUOTE_SURFACE_PRIORITY, createSelectionActions, onInteraction } from './selection.tsx'
 import { createSettings } from './settings.tsx'
 import css from './styles.css'
 import { Nothing, createViews } from './views.tsx'
@@ -42,7 +45,7 @@ export function apply(ctx: ClientContextLike): void {
   const bound = locale?.bind?.(LOCALE_NS)
   const t: Translate = bound ?? fallbackT
   const { CommandRow, Tail, HistoryTab } = createViews(getRemote)
-  const SelectionDock = createSelectionDock(getRemote)
+  const SelectionActions = createSelectionActions(getRemote)
 
   guard('dictionaries', () => {
     if (locale !== undefined) ctx.effect?.(() => locale.register(LOCALE_NS, { zh, en }), `${PLUGIN_ID}: dictionaries`)
@@ -80,10 +83,20 @@ export function apply(ctx: ClientContextLike): void {
     ))
   })
   guard('selection', () => {
-    slots.inject('conversation.input.dock', () => slots.register(
-      { name: 'conversation.input.dock', id: PLUGIN_ID, order: -40, locale: LOCALE_NS },
-      SelectionDock,
-    ))
+    slots.inject('conversation.chat.text-interaction', () => {
+      const off = [
+        // A lower priority shadows the host Quote entry, so both actions share its surface.
+        slots.register({ name: 'conversation.chat.text-interaction', key: QUOTE_SURFACE, priority: QUOTE_SURFACE_PRIORITY, locale: LOCALE_NS }, SelectionActions),
+        slots.register({ name: 'conversation.chat.text-interaction', key: PLUGIN_ID, locale: LOCALE_NS }, SelectionActions),
+      ]
+      return () => { for (const dispose of off) dispose() }
+    })
+    // Elected only when no earlier interaction (the host Quote plugin) opens its surface.
+    ctx.inject?.(['uiConversation'], (scope) => {
+      const interactions = (scope.get?.('uiConversation') as UiConversationLike | undefined)?.interactions
+      if (interactions === undefined) return
+      scope.effect?.(() => interactions.register({ id: PLUGIN_ID, onInteraction }), `${PLUGIN_ID}: selection interaction`)
+    })
   })
   guard('history tab', () => {
     ctx.inject?.(['sidebarRightTabs'], (scope) => {

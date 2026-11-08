@@ -1,133 +1,126 @@
 /**
- * Ask about selected text.
+ * Ask about selected text, inside the host's selection surface.
  *
- * Selecting text inside one message row opens a small bar with one action,
- * "Ask": it opens a question box and sends `/btw-quote` with the quote and the
- * row's turn, so the answer card is drawn under that reply. Only rows the host
- * marks as chat messages qualify; inputs, buttons, and folded process rows keep
- * the browser's behavior.
+ * The host Chat elects one text-interaction surface per selection, and its
+ * built-in Quote plugin owns that surface under the `quote` key with a single
+ * "Quote text" button. This module shadows the `quote` key (the lowest slot
+ * priority renders) with one pill holding both actions: "Quote text", which
+ * does what the host button does (`inputActions.insertQuote`), and "Ask",
+ * which turns the same surface into a question box and sends `/btw-quote` with
+ * the quote and the reply's turn, so the answer card is drawn under that
+ * reply. The same component also answers this plugin's own interaction, which
+ * the host elects only when Quote is absent or declines; then only "Ask" shows.
+ * The host decides which text qualifies, places the surface, and dismisses it.
  * @module dsh-btw/client/selection
  */
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { CMD_QUOTE, MAX_QUOTE, encodeQuote } from '../shared/protocol.ts'
-import type { RemoteLike, SessionKit } from './host.ts'
+import type { InteractionRequestLike, RemoteLike, SelectionProps, SessionSnapshotLike } from './host.ts'
 import { fallbackT } from './locales.ts'
 
-const ROW = '[data-chat-flow-kind="assistant-step"], [data-chat-flow-kind="assistant"], [data-chat-flow-kind="user"]'
-const EXCLUDED = 'input, textarea, button, [contenteditable]:not([contenteditable="false"]), [hidden], [data-turn-process-inline], .dsh-btw-card'
+/** The host Quote plugin's surface key, shadowed by this plugin. */
+export const QUOTE_SURFACE = 'quote'
+/** Slot priority that renders ahead of the host Quote entry (priority 0). */
+export const QUOTE_SURFACE_PRIORITY = -10
 
-/** A captured selection. */
-export interface Captured {
+/** The quote and its reply turn, captured when "Ask" is chosen. */
+interface Captured {
   text: string
-  /** Turn of the row the selection sits in, from the host's `data-chat-turn`. */
   turn?: number
-  /** Viewport anchor: horizontal center, top, and bottom of the selection. */
-  x: number
-  top: number
-  bottom: number
 }
 
 /**
- * Read the current selection if it lies inside one chat message row.
- * @param root - the conversation scroll container, or the document.
- * @returns the selection, or undefined when it does not qualify.
+ * This plugin's own interaction: open on any text selection the host offers.
+ * @param request - the host gesture.
  */
-export function captureSelection(root: ParentNode): Captured | undefined {
-  const selection = document.getSelection()
-  if (selection === null || selection.isCollapsed || selection.rangeCount !== 1) return undefined
-  const range = selection.getRangeAt(0)
-  const element = (node: Node) => (node.nodeType === 1 ? node as Element : node.parentElement)
-  const start = element(range.startContainer)
-  const end = element(range.endContainer)
-  const row = start?.closest(ROW)
-  if (!row || !end || !row.contains(end)) return undefined
-  if (root !== document && !(root as Element).contains(row)) return undefined
-  if (start?.closest(EXCLUDED) || end.closest(EXCLUDED)) return undefined
-  const text = selection.toString()
-  if (!text.trim()) return undefined
-  const attribute = row.closest('[data-chat-turn]')?.getAttribute('data-chat-turn')
-  const turn = attribute !== null && attribute !== undefined && /^\d+$/u.test(attribute) ? Number(attribute) : undefined
-  const rect = range.getBoundingClientRect()
-  return { text, ...turn === undefined ? {} : { turn }, x: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom }
+export function onInteraction(request: InteractionRequestLike): void {
+  if (request.trigger === 'selection' && request.readText() !== null) request.open()
+}
+
+/** The Quote plugin's rule: quoting writes into the composer, so the session must accept prompts. */
+function writable(session: SessionSnapshotLike): boolean {
+  return session.removed !== true && (session.subagent === null || session.subagent === undefined
+    || (session.subagent.address?.mode === 'continuable' && session.subagent.parentAvailable === true))
 }
 
 /**
- * Build the per-session selection component.
+ * Read the turn of the reply holding the live selection, from the host's `data-chat-turn`.
+ * @returns the turn, or undefined when the selection is gone or outside a turn.
+ */
+function selectionTurn(): number | undefined {
+  const selection = typeof document === 'undefined' ? null : document.getSelection()
+  if (selection === null || selection.rangeCount === 0) return undefined
+  const node = selection.getRangeAt(0).startContainer
+  const element = node.nodeType === 1 ? node as Element : node.parentElement
+  const attribute = element?.closest('[data-chat-turn]')?.getAttribute('data-chat-turn')
+  return attribute !== null && attribute !== undefined && /^\d+$/u.test(attribute) ? Number(attribute) : undefined
+}
+
+/**
+ * Build the selection surface component.
  * @param getRemote - the live `ctx.remote`.
- * @returns the `conversation.input.dock` entry.
+ * @returns the `conversation.chat.text-interaction` entry.
  */
-export function createSelectionDock(getRemote: () => RemoteLike | undefined) {
-  return function SelectionDock(props: SessionKit): ReactNode {
+export function createSelectionActions(getRemote: () => RemoteLike | undefined) {
+  return function SelectionActions(props: SelectionProps): ReactNode {
     const t = props.t ?? fallbackT
-    const anchor = useRef<HTMLSpanElement>(null)
-    const popover = useRef<HTMLDivElement>(null)
-    const [captured, setCaptured] = useState<Captured>()
-    const [asking, setAsking] = useState(false)
+    const dismiss = props.dismiss ?? (() => undefined)
+    const live = props.useSession?.(session => session.removed !== true) ?? true
+    const canQuote = (props.useSession?.(writable) ?? true) && props.inputActions !== undefined
+    const timeline = props.useChat?.(snapshot => snapshot.timeline)
+    const [asking, setAsking] = useState<Captured>()
     const [question, setQuestion] = useState('')
     const [error, setError] = useState<string>()
     const [busy, setBusy] = useState(false)
-    const timeline = props.useChat?.(snapshot => snapshot.timeline)
-    const askingRef = useRef(false)
-    askingRef.current = asking
-
-    const close = useCallback(() => {
-      setCaptured(undefined)
-      setAsking(false)
-      setQuestion('')
-      setError(undefined)
-    }, [])
 
     useEffect(() => {
-      const root: ParentNode = anchor.current?.closest('[data-conversation-scroll]') ?? document
-      const inside = (target: EventTarget | null) => target instanceof Node && popover.current?.contains(target) === true
-      const refresh = (event: Event) => {
-        if (inside(event.target) || askingRef.current) return
-        setTimeout(() => {
-          const next = captureSelection(root)
-          setCaptured(next)
-          if (next === undefined) setError(undefined)
-        }, 0)
-      }
-      const onKey = (event: globalThis.KeyboardEvent) => {
-        if (event.key === 'Escape') close()
-        else if (event.shiftKey || event.key === 'Shift') refresh(event)
-      }
-      const onDown = (event: MouseEvent) => { if (!inside(event.target) && !askingRef.current) setCaptured(undefined) }
-      const onScroll = () => { if (!askingRef.current) setCaptured(undefined) }
-      document.addEventListener('mouseup', refresh)
-      document.addEventListener('keyup', onKey)
-      document.addEventListener('mousedown', onDown)
-      root.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions)
-      return () => {
-        document.removeEventListener('mouseup', refresh)
-        document.removeEventListener('keyup', onKey)
-        document.removeEventListener('mousedown', onDown)
-        root.removeEventListener('scroll', onScroll)
-      }
-    }, [close])
+      if (!live) dismiss()
+    }, [live, dismiss])
+    if (!live) return null
+
+    // Keep the page selection while a button is pressed, as the host Quote button does.
+    const keep = (event: { preventDefault(): void }) => event.preventDefault()
+
+    const quote = () => {
+      const text = props.readText?.() ?? null
+      if (text === null) { dismiss(); return }
+      if (props.inputActions?.insertQuote(text) !== true) return
+      props.clearSelection?.()
+      dismiss()
+    }
+
+    const ask = () => {
+      const text = props.readText?.() ?? null
+      if (text === null) { dismiss(); return }
+      const turn = selectionTurn()
+      setAsking({ text, ...turn === undefined ? {} : { turn } })
+      setError(text.length > MAX_QUOTE ? t('selection.tooLong', { max: MAX_QUOTE }) : undefined)
+    }
 
     const send = async (text: string) => {
-      const remote = getRemote()
-      if (captured === undefined || remote === undefined || props.sessionId === undefined || busy) return
-      if (!text.trim()) return
-      if (captured.text.length > MAX_QUOTE) {
+      if (asking === undefined || busy || !text.trim()) return
+      if (asking.text.length > MAX_QUOTE) {
         setError(t('selection.tooLong', { max: MAX_QUOTE }))
         return
       }
+      const remote = getRemote()
+      if (remote === undefined || props.sessionId === undefined) {
+        setError(t('selection.failed', { detail: t('selection.offline') }))
+        return
+      }
       // Anchor under the reply only once its turn has closed: an open turn has no tail yet.
-      const anchorTurn = captured.turn !== undefined && timeline?.turns?.get(captured.turn)?.status === 'closed' ? captured.turn : undefined
+      const anchorTurn = asking.turn !== undefined && timeline?.turns?.get(asking.turn)?.status === 'closed' ? asking.turn : undefined
       setBusy(true)
       setError(undefined)
       try {
-        const line = `/${CMD_QUOTE} ${encodeQuote({ question: text.trim(), quote: captured.text, ...anchorTurn === undefined ? {} : { anchorTurn } })}`
+        const line = `/${CMD_QUOTE} ${encodeQuote({ question: text.trim(), quote: asking.text, ...anchorTurn === undefined ? {} : { anchorTurn } })}`
         const response = await remote.commands.execute(props.sessionId, line, [])
         const result = (response.value as { result?: { kind?: string; text?: string } } | undefined)?.result
         if (!response.ok) throw new Error(response.error?.message ?? 'refused')
         if (result?.kind === 'error') throw new Error(result.text ?? 'error')
-        document.getSelection()?.removeAllRanges()
-        close()
+        props.clearSelection?.()
+        dismiss()
       } catch (failure) {
         setError(t('selection.failed', { detail: failure instanceof Error ? failure.message : String(failure) }))
       } finally {
@@ -138,64 +131,51 @@ export function createSelectionDock(getRemote: () => RemoteLike | undefined) {
     const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        close()
+        dismiss()
       } else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
         event.preventDefault()
         void send(question)
       }
     }
 
-    const keep = (event: { preventDefault(): void }) => event.preventDefault()
-    // Keep the centered panel 16px inside the viewport: half its width (bar ~80px, box up to 360px) plus the margin.
-    const half = (asking ? Math.min(360, window.innerWidth - 32) / 2 : 40) + 16
-    const left = captured === undefined ? 0 : Math.min(Math.max(captured.x, half), window.innerWidth - half)
-    const panel = captured === undefined ? null : (
-      <div
-        ref={popover}
-        className="dsh-btw-selection"
-        data-mode={asking ? 'ask' : 'bar'}
-        style={asking
-          ? { left, top: Math.min(captured.bottom + 8, window.innerHeight - 200) }
-          : { left, top: Math.max(captured.top - 8, 8) }}
-      >
-        {asking
-          ? (
-            <div className="dsh-btw-ask">
-              <textarea
-                autoFocus
-                rows={2}
-                value={question}
-                placeholder={t('selection.placeholder')}
-                onChange={event => setQuestion(event.target.value)}
-                onKeyDown={onKeyDown}
-                disabled={busy}
-              />
-              {error !== undefined && <p className="dsh-btw-error" role="alert">{error}</p>}
-              <div className="dsh-btw-ask-actions">
-                <button type="button" className="dsh-btw-button" onClick={() => void send(t('selection.explainQuestion'))} disabled={busy}>
-                  {t('selection.explain')}
-                </button>
-                <span className="dsh-btw-spacer" />
-                <button type="button" className="dsh-btw-button" onClick={close} disabled={busy}>{t('selection.cancel')}</button>
-                <button type="button" className="dsh-btw-button" data-primary onClick={() => void send(question)} disabled={busy || !question.trim()}>
-                  {busy ? <span className="dsh-btw-spinner" aria-hidden="true" /> : null}
-                  {t('selection.send')}
-                </button>
-              </div>
-            </div>
-          )
-          : (
-            <div className="dsh-btw-bar" role="toolbar">
-              <button type="button" className="dsh-btw-button" onMouseDown={keep} onClick={() => setAsking(true)}>{t('selection.ask')}</button>
-            </div>
-          )}
-      </div>
-    )
+    if (asking !== undefined) {
+      return (
+        <div className="dsh-btw-ask" data-dsh-btw-selection="ask">
+          <textarea
+            autoFocus
+            rows={2}
+            value={question}
+            placeholder={t('selection.placeholder')}
+            onChange={event => setQuestion(event.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={busy}
+          />
+          {error !== undefined && <p className="dsh-btw-error" role="alert">{error}</p>}
+          <div className="dsh-btw-ask-actions">
+            <button type="button" className="dsh-btw-button" onClick={() => void send(t('selection.explainQuestion'))} disabled={busy}>
+              {t('selection.explain')}
+            </button>
+            <span className="dsh-btw-spacer" />
+            <button type="button" className="dsh-btw-button" onClick={dismiss} disabled={busy}>{t('selection.cancel')}</button>
+            <button type="button" className="dsh-btw-button" data-primary onClick={() => void send(question)} disabled={busy || !question.trim()}>
+              {busy ? <span className="dsh-btw-spinner" aria-hidden="true" /> : null}
+              {t('selection.send')}
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <>
-        <span ref={anchor} hidden data-dsh-btw-selection="" />
-        {panel !== null && typeof document !== 'undefined' ? createPortal(panel, document.body) : null}
-      </>
+      <div className="dsh-btw-pick" role="toolbar" data-dsh-btw-selection="bar">
+        {canQuote && (
+          <>
+            <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={quote}>{t('selection.quote')}</button>
+            <span className="dsh-btw-pick-divider" aria-hidden="true" />
+          </>
+        )}
+        <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={ask}>{t('selection.ask')}</button>
+      </div>
     )
   }
 }
